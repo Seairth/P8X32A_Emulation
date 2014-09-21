@@ -204,6 +204,35 @@ parameter dl        = 9;
 parameter sh        = 8;
 parameter sl        = 0;
 
+/* State
+
+   Index    Action 1                        Action 2
+   -------  ------------------------------- -------------------------------
+   0        Set up Read S from cog_ram      
+   1        Set up Read D from cog_ram      sy <= ram_q
+   2        Set up Read I from cog_ram       d <= ram_q, s <= sx
+   3        Set up Write D                  ix <= ram_q
+   4        Stall / Wait
+*/
+
+`define ST_RD_S  0
+`define ST_RD_D  1
+`define ST_RD_I  2
+`define ST_WR_D  3
+`define ST_WAIT  4
+
+reg [4:0] m;
+
+always @(posedge clk_cog or negedge ena)
+if (!ena)
+    m <= 5'b0;
+else
+    m <= { (m[2] || m[4]) &&  waiti,                // m[4] = wait
+           (m[2] || m[4]) && !waiti,                // m[3] = write d
+            m[1],                                   // m[2] = read next instruction
+            m[0],                                   // m[1] = read d
+           !m[4] && !m[2] && !m[1] && !m[0] };      // m[0] = read s
+
 
 // pointers
 
@@ -223,23 +252,8 @@ reg run;
 always @(posedge clk_cog or negedge ena)
 if (!ena)
     run <= 1'b0;
-else if (m[3] && (&px))
+else if (m[`ST_WR_D] && (&px))
     run <= 1'b1;
-
-
-// state
-
-reg [4:0] m;
-
-always @(posedge clk_cog or negedge ena)
-if (!ena)
-    m <= 5'b0;
-else
-    m <= { (m[2] || m[4]) &&  waiti,                // m[4] = wait
-           (m[2] || m[4]) && !waiti,                // m[3] = write d
-            m[1],                                   // m[2] = read next instruction
-            m[0],                                   // m[1] = read d
-           !m[4] && !m[2] && !m[1] && !m[0] };      // m[0] = read s
 
 
 // process
@@ -251,19 +265,19 @@ reg z;
 always @(posedge clk_cog or negedge ena)
 if (!ena)
     p <= 1'b0;
-else if (m[3] && !(cond && jump_cancel))
+else if (m[`ST_WR_D] && !(cond && jump_cancel))
     p <= px + 1'b1;
 
 always @(posedge clk_cog or negedge ena)
 if (!ena)
     c <= 1'b0;
-else if (m[3] && cond && i[wc])
+else if (m[`ST_WR_D] && cond && i[wc])
     c <= alu_co;
 
 always @(posedge clk_cog or negedge ena)
 if (!ena)
     z <= 1'b0;
-else if (m[3] && cond && i[wz])
+else if (m[`ST_WR_D] && cond && i[wz])
     z <= alu_zo;
 
 
@@ -293,7 +307,7 @@ else if (m[3] && cond && i[wz])
 //
 // * future 64-pin version
 
-wire wio            = m[3] && cond && i[wr] && (&i[dh:dl+4]);
+wire wio            = m[`ST_WR_D] && cond && i[wr] && (&i[dh:dl+4]);
 
 wire setouta        = wio && i[dl+3:dl] == 4'h4;
 wire setdira        = wio && i[dl+3:dl] == 4'h6;
@@ -309,13 +323,13 @@ wire setscl         = wio && i[dl+3:dl] == 4'hF;
 
 // register ram
 
-wire ram_ena        = m[0] || m[1] || m[2] || m[3] && cond && i[wr];
+wire ram_ena        = (m[`ST_RD_S] || m[`ST_RD_D] || m[`ST_RD_I] || m[`ST_WR_D]) && cond && i[wr];
 
-wire ram_w          = m[3] && alu_wr;
+wire ram_w          = m[`ST_WR_D] && alu_wr;
 
-wire [8:0] ram_a    = m[2]  ? px
-                    : m[0]  ? i[sh:sl]
-                            : i[dh:dl];
+wire [8:0] ram_a    = m[`ST_RD_I]  ? px
+                    : m[`ST_RD_S]  ? i[sh:sl]
+                                   : i[dh:dl];
 wire [31:0] ram_q;
 
 
@@ -403,7 +417,7 @@ cog_vid cog_vid_  ( .clk_cog    (clk_cog),
 reg [31:0] ix;
 
 always @(posedge clk_cog)
-if (m[3])
+if (m[`ST_WR_D])
     ix <= ram_q;
 
 wire [31:0] i       = run ? ix : {14'b000010_001_0_0001, p, 9'b000000000};
@@ -415,7 +429,7 @@ reg [31:0] sy;
 reg [31:0] s;
 
 always @(posedge clk_cog)
-if (m[1])
+if (m[`ST_RD_D])
     sy <= ram_q;
 
 wire [31:0] sx      = i[im]                 ? {23'b0, i[sh:sl]}
@@ -428,7 +442,7 @@ wire [31:0] sx      = i[im]                 ? {23'b0, i[sh:sl]}
 
 
 always @(posedge clk_cog)
-if (m[2])
+if (m[`ST_RD_I])
     s <= sx;
 
 
@@ -437,7 +451,7 @@ if (m[2])
 reg [31:0] d;
 
 always @(posedge clk_cog)
-if (m[2])
+if (m[`ST_RD_I])
     d <= ram_q;
 
 
@@ -468,14 +482,14 @@ wire [8:0] px       = cond && jump ? sx[8:0] : p;
 always @(posedge clk_cog or negedge ena)
 if (!ena)
     cancel <= 1'b0;
-else if (m[3])
+else if (m[`ST_WR_D])
     cancel <= cond && jump_cancel || &px;
 
 
 // bus interface
 
 assign bus_r        = !bus_sel ? 1'b0   : run;
-assign bus_e        = !bus_sel ? 1'b0   : i[oh:ol+2] == 4'b0000__ && m[4];
+assign bus_e        = !bus_sel ? 1'b0   : i[oh:ol+2] == 4'b0000__ && m[`ST_WAIT];
 assign bus_w        = !bus_sel ? 1'b0   : !i[wr];
 assign bus_s        = !bus_sel ? 2'b0   : i[ol+1:ol];
 assign bus_a        = !bus_sel ? 16'b0  : run ? s[15:0] : {ptr[13:0] + {5'b0, p}, s[1:0]};
@@ -509,7 +523,7 @@ cog_alu cog_alu_  ( .i      (i[oh:ol]),
 reg match;
 
 always @(posedge clk_cog)
-    match <= m[4] && (i[ol+1:ol] == 2'b01 ^ (i[ol+1] ? cnt : pin_in & s) == d);
+    match <= m[`ST_WAIT] && (i[ol+1:ol] == 2'b01 ^ (i[ol+1] ? cnt : pin_in & s) == d);
 
 
 // wait
