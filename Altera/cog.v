@@ -309,16 +309,16 @@ else if (m[`ST_WR_D] && cond && i[wz])
 
 wire wio            = m[`ST_WR_D] && cond && i[wr] && (&i[dh:dl+4]);
 
-wire setouta        = wio && i[dl+3:dl] == 4'h4;
-wire setdira        = wio && i[dl+3:dl] == 4'h6;
-wire setctra        = wio && i[dl+3:dl] == 4'h8;
-wire setctrb        = wio && i[dl+3:dl] == 4'h9;
-wire setfrqa        = wio && i[dl+3:dl] == 4'hA;
-wire setfrqb        = wio && i[dl+3:dl] == 4'hB;
-wire setphsa        = wio && i[dl+3:dl] == 4'hC;
-wire setphsb        = wio && i[dl+3:dl] == 4'hD;
-wire setvid         = wio && i[dl+3:dl] == 4'hE;
-wire setscl         = wio && i[dl+3:dl] == 4'hF;
+wire setouta        = wio && (i[dl+3:dl] == 4'h4);
+wire setdira        = wio && (i[dl+3:dl] == 4'h6);
+wire setctra        = wio && (i[dl+3:dl] == 4'h8);
+wire setctrb        = wio && (i[dl+3:dl] == 4'h9);
+wire setfrqa        = wio && (i[dl+3:dl] == 4'hA);
+wire setfrqb        = wio && (i[dl+3:dl] == 4'hB);
+wire setphsa        = wio && (i[dl+3:dl] == 4'hC);
+wire setphsb        = wio && (i[dl+3:dl] == 4'hD);
+wire setvid         = wio && (i[dl+3:dl] == 4'hE);
+wire setscl         = wio && (i[dl+3:dl] == 4'hF);
 
 
 // register ram
@@ -330,8 +330,8 @@ wire ram_w          = m[`ST_WR_D] && alu_wr;
 wire [8:0] ram_a    = m[`ST_RD_I]  ? px
                     : m[`ST_RD_S]  ? i[sh:sl]
                                    : i[dh:dl];
-wire [31:0] ram_q;
 
+wire [31:0] ram_q;
 
 cog_ram cog_ram_  ( .clk    (clk_cog),
                     .ena    (ram_ena),
@@ -417,7 +417,7 @@ cog_vid cog_vid_  ( .clk_cog    (clk_cog),
 reg [31:0] ix;
 
 always @(posedge clk_cog)
-if (m[`ST_WR_D])
+if (m[`ST_RD_I+1])
     ix <= ram_q;
 
 wire [31:0] i       = run ? ix : {14'b000010_001_0_0001, p, 9'b000000000};
@@ -429,7 +429,7 @@ reg [31:0] sy;
 reg [31:0] s;
 
 always @(posedge clk_cog)
-if (m[`ST_RD_D])
+if (m[`ST_RD_S+1])
     sy <= ram_q;
 
 wire [31:0] sx      = i[im]                 ? {23'b0, i[sh:sl]}
@@ -442,7 +442,7 @@ wire [31:0] sx      = i[im]                 ? {23'b0, i[sh:sl]}
 
 
 always @(posedge clk_cog)
-if (m[`ST_RD_I])
+if (m[`ST_RD_D+1])
     s <= sx;
 
 
@@ -451,7 +451,7 @@ if (m[`ST_RD_I])
 reg [31:0] d;
 
 always @(posedge clk_cog)
-if (m[`ST_RD_I])
+if (m[`ST_RD_D+1])
     d <= ram_q;
 
 
@@ -477,13 +477,13 @@ wire [1:0] jumpx    = i[oh:ol] == 6'b010111     ? {1'b1, 1'b0}              // r
 wire jump           = jumpx[1];
 wire jump_cancel    = jumpx[0];
 
-wire [8:0] px       = cond && jump ? sx[8:0] : p;
+wire [8:0] px       = (cond && jump) ? sx[8:0] : p;
 
 always @(posedge clk_cog or negedge ena)
 if (!ena)
     cancel <= 1'b0;
 else if (m[`ST_WR_D])
-    cancel <= cond && jump_cancel || &px;
+    cancel <= (cond && jump_cancel) || &px;
 
 
 // bus interface
@@ -523,7 +523,7 @@ cog_alu cog_alu_  ( .i      (i[oh:ol]),
 reg match;
 
 always @(posedge clk_cog)
-    match <= m[`ST_WAIT] && (i[ol+1:ol] == 2'b01 ^ (i[ol+1] ? cnt : pin_in & s) == d);
+    match <= m[`ST_WAIT] && ((i[ol+1:ol] == 2'b01) ^ ((i[ol+1] ? cnt : pin_in & s) == d));
 
 
 // wait
