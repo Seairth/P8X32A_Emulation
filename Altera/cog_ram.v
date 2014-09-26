@@ -21,22 +21,23 @@ the Propeller 1 Design.  If not, see <http://www.gnu.org/licenses/>.
 -------------------------------------------------------------------------------
 */
 
-module              cog_ram
+module cog_ram
 (
-input               clk,
-input               ena,
+input                          clk,
+input                          ena,
 
-input               w,
-input        [8:0]  a,
-input       [31:0]  d,
+input                          w,
+input       [(BIT_DEPTH-1):0]  a,
+input       [31:0]             d,
 
-output reg  [31:0]  q
+output reg  [31:0]             q
 );
 
+parameter BIT_DEPTH = 9;
 
 // 512 x 32 ram
 
-reg [511:0] [31:0]  r;
+reg [((1<<BIT_DEPTH)-1):0] [31:0]  r;
 
 always @(posedge clk)
 begin
