@@ -46,7 +46,10 @@ reg                 reset_to;
 wire                clk_pll;
 wire                clk_cog;
 
-wire         [31:0] pin_in = io;
+reg          [31:0] pin_in;
+
+always @ (posedge clk_cog)
+    pin_in <= io;
 
 //
 // Clock generation
