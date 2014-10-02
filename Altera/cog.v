@@ -221,19 +221,21 @@ parameter sl        = 0;
 `define ST_WR_D  3
 `define ST_WAIT  4
 
+// state
+
 reg [4:0] m;
 
 always @(posedge clk_cog or negedge ena)
 if (!ena)
     m <= 5'b0;
 else
-    m <= { (m[2] || m[4]) &&  waiti,                // m[4] = wait
-           (m[2] || m[4]) && !waiti,                // m[3] = write d
-            m[1],                                   // m[2] = read next instruction
-            m[0],                                   // m[1] = read d
-           !m[4] && !m[2] && !m[1] && !m[0] };      // m[0] = read s
+    m <= { (m[`ST_RD_I] || m[`ST_WAIT]) &&  waiti,                          // m[4] = wait
+           (m[`ST_RD_I] || m[`ST_WAIT]) && !waiti,                          // m[3] = write d
+            m[`ST_RD_D],                                                    // m[2] = read next instruction
+            m[`ST_RD_S],                                                    // m[1] = read d
+           !m[`ST_WAIT] && !m[`ST_RD_I] && !m[`ST_RD_D] && !m[`ST_RD_S] };  // m[0] = read s
 
-
+           
 // pointers
 
 reg [27:0] ptr;
@@ -307,7 +309,8 @@ else if (m[`ST_WR_D] && cond && i[wz])
 //
 // * future 64-pin version
 
-wire wio            = m[`ST_WR_D] && cond && i[wr] && (&i[dh:dl+4]);
+wire wr_ena         = m[`ST_WR_D] && cond && i[wr];
+wire wio            = wr && (&i[dh:dl+4]);
 
 wire setouta        = wio && (i[dl+3:dl] == 4'h4);
 wire setdira        = wio && (i[dl+3:dl] == 4'h6);
@@ -323,15 +326,15 @@ wire setscl         = wio && (i[dl+3:dl] == 4'hF);
 
 // register ram
 
-wire ram_ena        = (m[`ST_RD_S] || m[`ST_RD_D] || m[`ST_RD_I] || m[`ST_WR_D]) && cond && i[wr];
+wire ram_ena        = m[`ST_RD_S] || m[`ST_RD_D] || m[`ST_RD_I] || wr_ena;
 
 wire ram_w          = m[`ST_WR_D] && alu_wr;
 
-wire [8:0] ram_a    = m[`ST_RD_I]  ? px
-                    : m[`ST_RD_S]  ? i[sh:sl]
-                                   : i[dh:dl];
-
+wire [8:0] ram_a    = m[`ST_RD_I]   ? px
+                    : m[`ST_RD_S]   ? i[sh:sl]
+                                    : i[dh:dl]; // otherwise, reading/writing D (ST_RD_D or ST_WR_D)
 wire [31:0] ram_q;
+
 
 cog_ram cog_ram_  ( .clk    (clk_cog),
                     .ena    (ram_ena),
@@ -442,7 +445,7 @@ wire [31:0] sx      = i[im]                 ? {23'b0, i[sh:sl]}
 
 
 always @(posedge clk_cog)
-if (m[`ST_RD_D+1])
+if (m[`ST_RD_S+2])
     s <= sx;
 
 
